@@ -1,19 +1,28 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
+const ITEMS_PER_PAGE = 12;
+
 function Countries() {
   const [countries, setCountries] = useState([]);
   const [search, setSearch] = useState("");
   const [region, setRegion] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalCountries, setTotalCountries] = useState(0);
+  const [selectedCountry, setSelectedCountry] = useState(null);
 
   const getCountries = async () => {
     setLoading(true);
 
+    const from = (page - 1) * ITEMS_PER_PAGE;
+    const to = from + ITEMS_PER_PAGE - 1;
+
     let query = supabase
       .from("countries")
-      .select("*")
-      .order("name_common", { ascending: true });
+      .select("*", { count: "exact" })
+      .order("name_common", { ascending: true })
+      .range(from, to);
 
     if (search.trim() !== "") {
       query = query.ilike("name_common", `%${search}%`);
@@ -23,13 +32,14 @@ function Countries() {
       query = query.eq("region", region);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) {
       alert("Error al cargar países");
       console.error(error);
     } else {
       setCountries(data);
+      setTotalCountries(count || 0);
     }
 
     setLoading(false);
@@ -37,11 +47,18 @@ function Countries() {
 
   useEffect(() => {
     getCountries();
+  }, [page, search, region]);
+
+  useEffect(() => {
+    setPage(1);
   }, [search, region]);
+
+  const totalPages = Math.ceil(totalCountries / ITEMS_PER_PAGE);
 
   const clearFilters = () => {
     setSearch("");
     setRegion("");
+    setPage(1);
   };
 
   return (
@@ -90,12 +107,16 @@ function Countries() {
       ) : (
         <>
           <p style={styles.count}>
-            Showing {countries.length} countries
+            Showing {countries.length} of {totalCountries} countries
           </p>
 
           <div style={styles.grid}>
             {countries.map((country) => (
-              <div key={country.id} style={styles.card}>
+              <div
+                key={country.id}
+                style={styles.card}
+                onClick={() => setSelectedCountry(country)}
+              >
                 <img
                   src={country.flag_png}
                   alt={country.name_common}
@@ -118,10 +139,100 @@ function Countries() {
                     ? country.population.toLocaleString()
                     : "Not available"}
                 </p>
+
+                <button style={styles.detailsButton}>View details</button>
               </div>
             ))}
           </div>
+
+          <div style={styles.pagination}>
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page === 1}
+              style={{
+                ...styles.pageButton,
+                ...(page === 1 ? styles.disabledButton : {}),
+              }}
+            >
+              Previous
+            </button>
+
+            <span style={styles.pageInfo}>
+              Page {page} of {totalPages}
+            </span>
+
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page === totalPages}
+              style={{
+                ...styles.pageButton,
+                ...(page === totalPages ? styles.disabledButton : {}),
+              }}
+            >
+              Next
+            </button>
+          </div>
         </>
+      )}
+
+      {selectedCountry && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedCountry(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <button
+              style={styles.closeButton}
+              onClick={() => setSelectedCountry(null)}
+            >
+              ×
+            </button>
+
+            <img
+              src={selectedCountry.flag_png}
+              alt={selectedCountry.name_common}
+              style={styles.modalFlag}
+            />
+
+            <h2 style={styles.modalTitle}>{selectedCountry.name_common}</h2>
+            <p style={styles.officialName}>{selectedCountry.name_official}</p>
+
+            <div style={styles.detailGrid}>
+              <p>
+                <b>Region:</b> {selectedCountry.region || "Not available"}
+              </p>
+              <p>
+                <b>Subregion:</b>{" "}
+                {selectedCountry.subregion || "Not available"}
+              </p>
+              <p>
+                <b>Capital:</b> {selectedCountry.capital || "Not available"}
+              </p>
+              <p>
+                <b>Population:</b>{" "}
+                {selectedCountry.population
+                  ? selectedCountry.population.toLocaleString()
+                  : "Not available"}
+              </p>
+              <p>
+                <b>Languages:</b>{" "}
+                {selectedCountry.languages || "Not available"}
+              </p>
+              <p>
+                <b>Currencies:</b>{" "}
+                {selectedCountry.currencies || "Not available"}
+              </p>
+            </div>
+
+            {selectedCountry.maps_google && (
+              <a
+                href={selectedCountry.maps_google}
+                target="_blank"
+                rel="noreferrer"
+                style={styles.mapButton}
+              >
+                Open in Google Maps
+              </a>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -188,7 +299,7 @@ const styles = {
     borderRadius: "18px",
     padding: "18px",
     boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+    cursor: "pointer",
   },
   flag: {
     width: "100%",
@@ -200,6 +311,106 @@ const styles = {
   cardTitle: {
     color: "#0f172a",
     marginBottom: "10px",
+  },
+  detailsButton: {
+    marginTop: "10px",
+    width: "100%",
+    padding: "10px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#2563eb",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: "bold",
+  },
+  pagination: {
+    marginTop: "30px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "15px",
+  },
+  pageButton: {
+    padding: "12px 18px",
+    borderRadius: "12px",
+    border: "none",
+    background: "#2563eb",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: "bold",
+  },
+  disabledButton: {
+    background: "#94a3b8",
+    cursor: "not-allowed",
+  },
+  pageInfo: {
+    color: "#334155",
+    fontWeight: "bold",
+  },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 23, 42, 0.65)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: "20px",
+    zIndex: 1000,
+  },
+  modal: {
+    width: "100%",
+    maxWidth: "560px",
+    background: "white",
+    borderRadius: "22px",
+    padding: "25px",
+    position: "relative",
+    boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+  },
+  closeButton: {
+    position: "absolute",
+    top: "15px",
+    right: "18px",
+    border: "none",
+    background: "#e2e8f0",
+    color: "#0f172a",
+    width: "35px",
+    height: "35px",
+    borderRadius: "50%",
+    fontSize: "24px",
+    cursor: "pointer",
+  },
+  modalFlag: {
+    width: "100%",
+    height: "200px",
+    objectFit: "cover",
+    borderRadius: "16px",
+    border: "1px solid #e2e8f0",
+  },
+  modalTitle: {
+    marginTop: "18px",
+    marginBottom: "5px",
+    color: "#0f172a",
+  },
+  officialName: {
+    color: "#64748b",
+    marginBottom: "20px",
+  },
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px 16px",
+    color: "#334155",
+  },
+  mapButton: {
+    display: "block",
+    textAlign: "center",
+    marginTop: "20px",
+    padding: "12px",
+    borderRadius: "12px",
+    background: "#16a34a",
+    color: "white",
+    textDecoration: "none",
+    fontWeight: "bold",
   },
 };
 
